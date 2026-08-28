@@ -1,68 +1,44 @@
 package Tracker;
-import java.util.*;
 
-class MutableLocation {
-    public double latitude;
-    public double longitude;
-    public MutableLocation(double latitude, double longitude) {
+import java.util.*;
+import java.util.concurrent.*;
+
+final class Location {
+    private final double latitude;
+    private final double longitude;
+    private final long timestamp;
+
+    public Location(double latitude, double longitude) {
         this.latitude = latitude;
         this.longitude = longitude;
+        this.timestamp = System.currentTimeMillis();
     }
-    public MutableLocation(MutableLocation other) {
-        this.latitude = other.latitude;
-        this.longitude = other.longitude;
-    }
+
+    public double getLatitude() { return latitude; }
+    public double getLongitude() { return longitude; }
+    public long getTimestamp() { return timestamp; }
 }
 
-class Car {
+final class VehicleRecord {
     private final String id;
     private final String model;
     private final String driverName;
-    public Car(String id, String model, String driverName) {
+    private final Location location;
+
+    public VehicleRecord(String id, String model, String driverName, Location location) {
         this.id = id;
         this.model = model;
         this.driverName = driverName;
+        this.location = location;
     }
+
     public String getId() { return id; }
     public String getModel() { return model; }
     public String getDriverName() { return driverName; }
-}
+    public Location getLocation() { return location; }
 
-class MonitorVehicleTracker {
-    private final Map<String, Car> cars;
-    private final Map<String, MutableLocation> locations;
-    public MonitorVehicleTracker(Map<String, Car> cars,
-                                 Map<String, MutableLocation> initialLocations) {
-        this.cars = Collections.unmodifiableMap(new HashMap<>(cars));
-        this.locations = deepCopy(initialLocations);
-    }
-    public synchronized void setLocation(String id,
-                                         double latitude,
-                                         double longitude) {
-        MutableLocation loc = locations.get(id);
-        if (loc == null) {
-            throw new IllegalArgumentException("No such vehicle: " + id);
-        }
-        loc.latitude = latitude;
-        loc.longitude = longitude;
-    }
-    public synchronized MutableLocation getLocation(String id) {
-        MutableLocation loc = locations.get(id);
-        return (loc == null) ? null : new MutableLocation(loc);
-    }
-    public synchronized Map<String, MutableLocation> getLocations() {
-        return Collections.unmodifiableMap(deepCopy(locations));
-    }
-    public Car getCar(String id) {
-        return cars.get(id);
-    }
-    private static Map<String, MutableLocation> deepCopy(
-            Map<String, MutableLocation> original) {
-        Map<String, MutableLocation> result = new HashMap<>();
-        for (String id : original.keySet()) {
-            result.put(id, new MutableLocation(original.get(id)));
-        }
-        return result;
+    public VehicleRecord updateLocation(double lat, double lon) {
+        return new VehicleRecord(this.id, this.model, this.driverName, new Location(lat, lon));
     }
 }
 
@@ -79,6 +55,9 @@ public class Tracker {
         unilagStops.put("DLI", new double[]{6.512665, 3.391275});
         unilagStops.put("Gate", new double[]{6.517666, 3.384752});
         unilagStops.put("Education", new double[]{6.517383, 3.385804});
+        unilagStops.put("FSS", new double[]{6.515858, 3.3917444});
+        unilagStops.put("Sport", new double[]{6.516989, 3.390854});
+        unilagStops.put("CITS", new double[]{6.518464, 3.395022});
 
         for (Map.Entry<String, double[]> entry : unilagStops.entrySet()) {
             double[] coords = entry.getValue();
@@ -86,33 +65,41 @@ public class Tracker {
         }
 
         routes.put("DLI", new HashMap<>());
+        routes.get("DLI").put("Education_via_NewHall", Arrays.asList("DLI", "FSS", "New Hall", "Sport", "Education"));
         routes.get("DLI").put("Education", Arrays.asList("DLI", "Education"));
-        routes.get("DLI").put("Gate", Arrays.asList("DLI", "New Hall", "Gate"));
+        routes.get("DLI").put("Campus_via_NewHall", Arrays.asList("DLI", "New Hall", "CITS", "Campus"));
+        routes.get("DLI").put("Campus", Arrays.asList("DLI", "Campus"));
 
         routes.put("Campus", new HashMap<>());
-        routes.get("Campus").put("Gate", Arrays.asList("Campus", "Gate"));
-        routes.get("Campus").put("Gate_via_NewHall", Arrays.asList("Campus", "New Hall", "Gate"));
+        routes.get("Campus").put("Gate", Arrays.asList("Campus", "CITS", "New Hall", "Sport", "Gate"));
         routes.get("Campus").put("DLI", Arrays.asList("Campus", "DLI"));
-        routes.get("Campus").put("DLI_via_NewHall", Arrays.asList("Campus", "New Hall", "DLI"));
+        routes.get("Campus").put("DLI_via_NewHall", Arrays.asList("Campus", "CITS", "New Hall", "FSS", "DLI"));
+
+        routes.put("Gate", new HashMap<>());
+        routes.get("Gate").put("Campus", Arrays.asList("Gate", "Sport", "New Hall", "CITS", "Campus"));
+
+        routes.put("Education", new HashMap<>());
+        routes.get("Education").put("DLI", Arrays.asList("Education", "DLI"));
+        routes.get("Education").put("DLI_via_NewHall", Arrays.asList("Education", "Sport", "New Hall", "FSS", "DLI"));
+
     }
 
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
         Random rand = new Random();
+        SpatialVehicleTracker tracker = new SpatialVehicleTracker();
 
         System.out.println("Enter number of cars (Maximum 10 allowed): ");
         int fleetSize = scanner.nextInt();
         scanner.nextLine();
         if (fleetSize <= 0 || fleetSize > 10) {
             System.out.println("Invalid number. Only 1–10 cars allowed.");
+            scanner.close();
             return;
         }
 
-        Map<String, Car> cars = new HashMap<>();
-        Map<String, MutableLocation> locations = new HashMap<>();
-
         for (int i = 1; i <= fleetSize; i++) {
-            System.out.println("\nEnter ID (NAME) of Car " + i + ": ");
+            System.out.println("\nEnter ID of Car " + i + ": ");
             String id = scanner.nextLine();
             System.out.println("Enter driver name: ");
             String driver = scanner.nextLine();
@@ -122,51 +109,53 @@ public class Tracker {
             String startStop = startPoints[rand.nextInt(startPoints.length)];
             double[] coords = unilagStops.get(startStop);
 
-            cars.put(id, new Car(id, model, driver));
-            locations.put(id, new MutableLocation(coords[0], coords[1]));
-            System.out.println(id + " starts at " + startStop);
+            tracker.registerVehicle(id, model, driver, coords[0], coords[1]);
+            System.out.println(id + " initialized at " + startStop);
         }
-
-        MonitorVehicleTracker tracker = new MonitorVehicleTracker(cars, locations);
 
         boolean running = true;
         while (running) {
             System.out.println("\n===== VEHICLE TRACKER MENU =====");
-            System.out.println("1. Move cars (simulate movement)");
-            System.out.println("2. Move a car to specific stop");
+            System.out.println("1. Move cars (Simulate concurrent movement)");
+            System.out.println("2. Move a car to a specific stop");
             System.out.println("3. Track ALL cars");
             System.out.println("4. Track specific car");
-            System.out.println("5. Terminate System");
+            System.out.println("5. QuadTree Spatial Radius Search (Find nearby cars)");
+            System.out.println("6. Terminate System");
             System.out.print("Choose option: ");
             int choice = scanner.nextInt();
             scanner.nextLine();
 
             switch (choice) {
-                case 1: // Move all cars along routes
-                    List<Thread> threads = new ArrayList<>();
-                    for (String carId : cars.keySet()) {
-                        Thread t = new Thread(() -> {
-                            MutableLocation loc = tracker.getLocation(carId);
-                            String start = coordinateNames.get(loc.latitude + "," + loc.longitude);
+                case 1: // Concurrent movement via thread pool
+                    Map<String, VehicleRecord> all = tracker.getAllVehicles();
+                    ExecutorService pool = Executors.newFixedThreadPool(all.size());
+                    List<Callable<Void>> tasks = new ArrayList<>();
 
+                    for (VehicleRecord record : all.values()) {
+                        tasks.add(() -> {
+                            Location loc = record.getLocation();
+                            String start = coordinateNames.get(loc.getLatitude() + "," + loc.getLongitude());
                             Map<String, List<String>> possibleDest = routes.get(start);
+
                             if (possibleDest != null && !possibleDest.isEmpty()) {
                                 List<List<String>> allPaths = new ArrayList<>(possibleDest.values());
                                 List<String> path = allPaths.get(rand.nextInt(allPaths.size()));
-                                moveCarAlongPath(tracker, carId, path, 2);
+                                moveCarAlongPath(tracker, record.getId(), path, 1);
                             }
+                            return null;
                         });
-                        threads.add(t);
-                        t.start();
                     }
-                    for (Thread t : threads) {
-                        try { t.join(); } catch (InterruptedException ignored) {}
-                    }
-                    System.out.println("All cars completed their routes.");
+
+                    try {
+                        pool.invokeAll(tasks);
+                        pool.shutdown();
+                    } catch (InterruptedException ignored) {}
+                    System.out.println("All cars completed their concurrent routes.");
                     break;
 
-                case 2: // Move a single car
-                    System.out.print("Enter Car ID (NAME): ");
+                case 2: // Move single car
+                    System.out.print("Enter Car ID: ");
                     String moveId = scanner.nextLine();
                     System.out.println("Available stops: New Hall, Campus, DLI, Gate, Education");
                     String chosenStop = scanner.nextLine();
@@ -175,63 +164,68 @@ public class Tracker {
                         break;
                     }
                     double[] coords = unilagStops.get(chosenStop);
-                    final double finalLat = coords[0];
-                    final double finalLon = coords[1];
-                    Thread moveOne = new Thread(() -> {
-                        tracker.setLocation(moveId, finalLat, finalLon);
-                        System.out.println(moveId + " moved to " + chosenStop
-                                + " (" + finalLat + ", " + finalLon + ")");
-                    });
-                    moveOne.start();
-                    try { moveOne.join(); } catch (InterruptedException ignored) {}
+                    tracker.updateLocation(moveId, coords[0], coords[1]);
+                    System.out.println(moveId + " moved to " + chosenStop + " (" + coords[0] + ", " + coords[1] + ")");
                     break;
 
-                case 3: // Track all cars
-                    Thread viewAll = new Thread(() -> {
-                        Map<String, MutableLocation> snapshot = tracker.getLocations();
-                        System.out.println("\n--- All Vehicle Locations ---");
-                        for (String id : snapshot.keySet()) {
-                            MutableLocation loc = snapshot.get(id);
-                            Car car = tracker.getCar(id);
-                            String key = loc.latitude + "," + loc.longitude;
-                            String locationName = coordinateNames.getOrDefault(key, "Unknown");
-                            System.out.println(id +
-                                    " | Driver: " + car.getDriverName() +
-                                    " | Model: " + car.getModel() +
-                                    " | Location: (" +
-                                    loc.latitude + ", " +
-                                    loc.longitude + ")" +
-                                    " | Stop: " + locationName);
-                        }
-                    });
-                    viewAll.start();
-                    try { viewAll.join(); } catch (InterruptedException ignored) {}
+                case 3: // Track all cars (Lock-free snapshot read)
+                    System.out.println("\n--- All Vehicle Locations ---");
+                    for (VehicleRecord car : tracker.getAllVehicles().values()) {
+                        Location loc = car.getLocation();
+                        String key = loc.getLatitude() + "," + loc.getLongitude();
+                        String locationName = coordinateNames.getOrDefault(key, "In Transit");
+                        System.out.println(car.getId() +
+                                " | Driver: " + car.getDriverName() +
+                                " | Model: " + car.getModel() +
+                                " | Location: (" + loc.getLatitude() + ", " + loc.getLongitude() + ")" +
+                                " | Stop: " + locationName);
+                    }
                     break;
 
-                case 4: // Track specific car
+                case 4: // Track single car
                     System.out.print("Enter Car ID: ");
                     String trackId = scanner.nextLine();
-                    Thread viewOne = new Thread(() -> {
-                        MutableLocation loc = tracker.getLocation(trackId);
-                        Car car = tracker.getCar(trackId);
-                        if (loc == null || car == null) {
-                            System.out.println("Car not found.");
-                        } else {
-                            String key = loc.latitude + "," + loc.longitude;
-                            String locationName = coordinateNames.getOrDefault(key, "Unknown");
-                            System.out.println("\nCar Details:");
-                            System.out.println("Driver: " + car.getDriverName());
-                            System.out.println("Model: " + car.getModel());
-                            System.out.println("Coordinates: (" +
-                                    loc.latitude + ", " + loc.longitude + ")");
-                            System.out.println("Stop: " + locationName);
-                        }
-                    });
-                    viewOne.start();
-                    try { viewOne.join(); } catch (InterruptedException ignored) {}
+                    VehicleRecord car = tracker.getVehicle(trackId);
+                    if (car == null) {
+                        System.out.println("Car not found.");
+                    } else {
+                        Location loc = car.getLocation();
+                        String key = loc.getLatitude() + "," + loc.getLongitude();
+                        String locationName = coordinateNames.getOrDefault(key, "In Transit");
+                        System.out.println("\nCar Details:");
+                        System.out.println("Driver: " + car.getDriverName());
+                        System.out.println("Model: " + car.getModel());
+                        System.out.println("Coordinates: (" + loc.getLatitude() + ", " + loc.getLongitude() + ")");
+                        System.out.println("Stop: " + locationName);
+                    }
                     break;
 
-                case 5:
+                case 5: // QuadTree Spatial Query
+                    System.out.println("Available stops to query around: New Hall, Campus, DLI, Gate, Education");
+                    System.out.print("Select reference stop: ");
+                    String refStop = scanner.nextLine();
+                    if (!unilagStops.containsKey(refStop)) {
+                        System.out.println("Invalid stop name.");
+                        break;
+                    }
+                    System.out.print("Enter radius in km (e.g. 0.5): ");
+                    double radius = scanner.nextDouble();
+                    scanner.nextLine();
+
+                    double[] refCoords = unilagStops.get(refStop);
+                    List<VehicleRecord> nearby = tracker.findVehiclesNear(refCoords[0], refCoords[1], radius);
+
+                    System.out.println("\n--- Vehicles within " + radius + "km of " + refStop + " (via QuadTree) ---");
+                    if (nearby.isEmpty()) {
+                        System.out.println("No vehicles found in this radius.");
+                    } else {
+                        for (VehicleRecord v : nearby) {
+                            System.out.println(v.getId() + " | Driver: " + v.getDriverName() + " | Model: " + v.getModel());
+                        }
+                    }
+                    break;
+
+                case 6:
                     running = false;
                     System.out.println("Tracking system terminated.");
                     break;
@@ -240,23 +234,17 @@ public class Tracker {
                     System.out.println("Invalid option.");
             }
         }
-
         scanner.close();
     }
 
-    public static void moveCarAlongPath(MonitorVehicleTracker tracker,
-                                        String carId,
-                                        List<String> path,
-                                        int delaySeconds) {
+    public static void moveCarAlongPath(SpatialVehicleTracker tracker, String carId, List<String> path, int delaySeconds) {
         for (String stop : path) {
             double[] coords = unilagStops.get(stop);
-            tracker.setLocation(carId, coords[0], coords[1]);
-            System.out.println(carId + " arrived at " + stop
-                    + " (" + coords[0] + ", " + coords[1] + ")");
+            tracker.updateLocation(carId, coords[0], coords[1]);
+            System.out.println(carId + " arrived at " + stop);
             try {
-                Thread.sleep(delaySeconds * 5000);
+                Thread.sleep(delaySeconds * 1000L);
             } catch (InterruptedException ignored) {}
         }
-        System.out.println(carId + " completed its route.");
     }
 }
