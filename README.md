@@ -48,7 +48,11 @@ A high-performance, concurrent vehicle telemetry tracking and transit simulation
 Fleet-Tracker/
 ├── src/
 │   └── Tracker/
-│       └── Tracker.java         # Monolithic source containing all models, QuadTree, Tracker, and CLI driver
+│       ├── BoundingBox.java            # 2D coordinate range and bounding box intersection logic
+│       ├── QuadTreeNode.java           # Recursive QuadTree node subdivision and spatial queries
+│       ├── SpatialVehicleTracker.java   # Lock-free registry & spatial query engine
+│       └── Tracker.java                # Immutable records (Location, VehicleRecord), CLI, and simulation loop
+├── .gitignore
 └── README.md
 ```
 
@@ -64,14 +68,14 @@ Fleet-Tracker/
 
 1. Clone the repository and checkout the working branch:
 ```bash
-git clone https://github.com/oladokun-olayiwola/Fleet-Tracker.git
+git clone [https://github.com/oladokun-olayiwola/Fleet-Tracker.git](https://github.com/oladokun-olayiwola/Fleet-Tracker.git)
 cd Fleet-Tracker
 git checkout refactor/lock-free-quadtree
 ```
 
-2. Compile the source code:
+2. Compile all source files into a `bin` directory:
 ```bash
-javac -d bin src/Tracker/Tracker.java
+javac -d bin src/Tracker/*.java
 ```
 
 3. Run the tracking engine:
