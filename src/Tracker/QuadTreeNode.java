@@ -3,7 +3,7 @@ package Tracker;
 import java.util.ArrayList;
 import java.util.List;
 
-public class QuadTreeNode {
+class QuadTreeNode {
     private static final int CAPACITY = 4;
     private final BoundingBox boundary;
     private final List<VehicleRecord> points = new ArrayList<>();

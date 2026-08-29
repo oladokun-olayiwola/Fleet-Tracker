@@ -1,13 +1,13 @@
 # Concurrent Geospatial Fleet Telemetry & QuadTree Tracker
 
-A high-performance, concurrent vehicle telemetry tracking and transit simulation engine built in Java. The system pairs lock-free memory primitives (`ConcurrentHashMap`, immutable value snapshots) with a hierarchical **2D Point QuadTree** for O(log N) geospatial proximity filtering across the UNILAG campus transit network.
+A high-performance, concurrent vehicle telemetry tracking and transit simulation engine built in Java. The system pairs lock-free memory primitives (`ConcurrentHashMap`, immutable value snapshots) with a hierarchical **2D Point QuadTree** for spatial candidate pruning across the UNILAG campus transit network.
 
 ---
 
 ## Architectural Highlights
 
 * **Lock-Free Concurrency Model:** Utilizes `ConcurrentHashMap` and immutable domain records (`VehicleRecord`, `Location`) to guarantee race-condition-free reads and atomic writes without coarse global synchronization.
-* **O(log N) Spatial Indexing:** Implements a recursive 2D Point QuadTree that partitions geographic coordinate space, reducing radial proximity queries from an O(N) brute-force distance scan to O(log N).
+* **Spatial Indexing with Candidate Pruning:** Implements a recursive 2D Point QuadTree that partitions geographic coordinate space and prunes candidates before precise Haversine filtering.
 * **Two-Tier Search Pruning:** Employs fast bounding-box intersection testing for quadrant candidate pruning (broad phase) followed by precise Haversine circular distance validation (narrow phase).
 * **Deterministic Route Graph & Deadlock-Free Fallbacks:** Features an explicit transit route network (`ROUTES`) paired with an insertion-ordered `LinkedHashMap` (`UNILAG_STOPS`) to preserve stop order and provide robust fallback paths for intermediate transit nodes.
 * **Epsilon-Tolerant Geofencing:** Resolves raw floating-point coordinates to designated transit stop names using an epsilon threshold (ε = 0.0001) to prevent floating-point precision mismatches.
@@ -37,7 +37,7 @@ A high-performance, concurrent vehicle telemetry tracking and transit simulation
         +-------------+-------------+                   +-------------+-------------+
                       |                                               |
                       v                                               v
-         Atomic O(1) State Updates                       O(log N) Proximity Searches
+         Atomic O(1) State Updates                Candidate-Pruned Proximity Searches
 ```
 
 ---
@@ -102,5 +102,5 @@ java -cp bin Tracker.Tracker
 | :--- | :--- | :--- |
 | **Coordinate Update** | O(1) (Thread-blocking lock) | O(1) (Lock-free atomic compute) |
 | **Vehicle Lookup (by ID)** | O(1) | O(1) |
-| **Spatial Proximity Search** | O(N) (Full fleet scan) | O(log N) (Hierarchical quadrant partition) |
+| **Spatial Proximity Search** | O(N) (Full fleet scan) | O(N + k) per query (ephemeral QuadTree build + candidate filter) |
 | **Memory Publication** | Defensive deep-copying (O(N)) | Immutable memory reference (O(1)) |

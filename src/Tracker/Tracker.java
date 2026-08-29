@@ -139,8 +139,20 @@ public class Tracker {
 
         for (int i = 1; i <= fleetSize; i++) {
             System.out.println("\n--- Registering Car " + i + " of " + fleetSize + " ---");
-            System.out.print("Enter ID: ");
-            String id = scanner.nextLine().trim();
+            String id;
+            while (true) {
+                System.out.print("Enter ID: ");
+                id = scanner.nextLine().trim();
+                if (id.isEmpty()) {
+                    System.out.println("Vehicle ID cannot be empty.");
+                    continue;
+                }
+                if (tracker.getVehicle(id) != null) {
+                    System.out.println("Vehicle ID already exists. Please enter a unique ID.");
+                    continue;
+                }
+                break;
+            }
             System.out.print("Enter driver name: ");
             String driver = scanner.nextLine().trim();
             System.out.print("Enter car model: ");
@@ -209,10 +221,18 @@ public class Tracker {
 
                     try {
                         pool.invokeAll(tasks);
-                        pool.shutdown();
-                        pool.awaitTermination(30, TimeUnit.SECONDS);
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
+                    } finally {
+                        pool.shutdown();
+                        try {
+                            if (!pool.awaitTermination(30, TimeUnit.SECONDS)) {
+                                pool.shutdownNow();
+                            }
+                        } catch (InterruptedException e) {
+                            pool.shutdownNow();
+                            Thread.currentThread().interrupt();
+                        }
                     }
                     System.out.println("\nAll cars completed their concurrent routes.");
                     break;

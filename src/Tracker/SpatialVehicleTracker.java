@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class SpatialVehicleTracker {
+class SpatialVehicleTracker {
     // Lock-free key-value store for O(1) concurrent updates
     private final ConcurrentHashMap<String, VehicleRecord> registry = new ConcurrentHashMap<>();
     
@@ -14,11 +14,13 @@ public class SpatialVehicleTracker {
     private final BoundingBox regionBoundary = new BoundingBox(6.40, 3.30, 6.65, 3.50);
 
     public void registerVehicle(String id, String model, String driver, double lat, double lon) {
+        validateCoordinates(lat, lon);
         registry.put(id, new VehicleRecord(id, model, driver, new Location(lat, lon)));
     }
 
     // Atomic, lock-free update via CAS (Compare-And-Swap) semantics
     public void updateLocation(String id, double latitude, double longitude) {
+        validateCoordinates(latitude, longitude);
         registry.computeIfPresent(id, (k, current) -> current.updateLocation(latitude, longitude));
     }
 
@@ -30,8 +32,11 @@ public class SpatialVehicleTracker {
         return Collections.unmodifiableMap(registry);
     }
 
-    // O(log N) Spatial Radius Query via ephemeral QuadTree build
+    // Ephemeral QuadTree build + candidate filtering spatial radius query
     public List<VehicleRecord> findVehiclesNear(double lat, double lon, double radiusKm) {
+        if (radiusKm < 0) {
+            throw new IllegalArgumentException("Radius cannot be negative.");
+        }
         QuadTreeNode quadTree = new QuadTreeNode(regionBoundary);
         for (VehicleRecord record : registry.values()) {
             quadTree.insert(record);
@@ -53,6 +58,12 @@ public class SpatialVehicleTracker {
             }
         }
         return results;
+    }
+
+    private void validateCoordinates(double lat, double lon) {
+        if (!regionBoundary.contains(lat, lon)) {
+            throw new IllegalArgumentException("Coordinates are outside the supported region boundary.");
+        }
     }
 
     private double haversineDistance(double lat1, double lon1, double lat2, double lon2) {
