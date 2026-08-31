@@ -5,6 +5,7 @@ import java.util.List;
 
 class QuadTreeNode {
     private static final int CAPACITY = 4;
+    private static final int MAX_DEPTH = 10; // Prevents StackOverflow on identical/clustered coordinates
     private final BoundingBox boundary;
     private final List<VehicleRecord> points = new ArrayList<>();
     private QuadTreeNode northWest, northEast, southWest, southEast;
@@ -25,31 +26,44 @@ class QuadTreeNode {
         divided = true;
     }
 
+    // Public entry point maintaining backward compatibility
     public boolean insert(VehicleRecord vehicle) {
+        return insert(vehicle, 0);
+    }
+
+    // Depth-tracked internal insert
+    private boolean insert(VehicleRecord vehicle, int depth) {
         Location loc = vehicle.getLocation();
         if (!boundary.contains(loc.getLatitude(), loc.getLongitude())) {
             return false;
         }
 
-        if (points.size() < CAPACITY && !divided) {
+        // If the node has capacity OR we hit MAX_DEPTH, keep the point in this node
+        if (depth >= MAX_DEPTH) {
             points.add(vehicle);
             return true;
         }
 
         if (!divided) {
-            subdivide();
-            for (VehicleRecord p : points) {
-                insertToChildren(p);
+            if (points.size() < CAPACITY) {
+                points.add(vehicle);
+                return true;
             }
+
+            subdivide();
+            List<VehicleRecord> existing = new ArrayList<>(points);
             points.clear();
+            for (VehicleRecord p : existing) {
+                insertToChildren(p, depth + 1);
+            }
         }
 
-        return insertToChildren(vehicle);
+        return insertToChildren(vehicle, depth + 1);
     }
 
-    private boolean insertToChildren(VehicleRecord vehicle) {
-        return northWest.insert(vehicle) || northEast.insert(vehicle) ||
-               southWest.insert(vehicle) || southEast.insert(vehicle);
+    private boolean insertToChildren(VehicleRecord vehicle, int depth) {
+        return northWest.insert(vehicle, depth) || northEast.insert(vehicle, depth) ||
+               southWest.insert(vehicle, depth) || southEast.insert(vehicle, depth);
     }
 
     public void queryRange(BoundingBox range, List<VehicleRecord> found) {
