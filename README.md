@@ -104,5 +104,5 @@ java -cp bin Tracker.Tracker
 | :--- | :--- | :--- |
 | **Coordinate Update** | O(1) (Thread-blocking lock) | O(1) (Lock-free atomic compute) |
 | **Vehicle Lookup (by ID)** | O(1) | O(1) |
-| **Spatial Proximity Search** | O(N) (Full fleet scan) | O(N + k) per query (ephemeral QuadTree build + candidate filter) |
+| **Spatial Proximity Search** | O(N) (Full fleet scan) | O(N log N + k) avg per query (ephemeral QuadTree build + candidate filter) |
 | **Memory Publication** | Defensive deep-copying (O(N)) | Immutable memory reference (O(1)) |
