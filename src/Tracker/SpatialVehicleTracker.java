@@ -43,9 +43,9 @@ class SpatialVehicleTracker {
         }
 
         // Approx: 1 deg latitude ≈ 111km; 1 deg longitude ≈ 111km * cos(lat)
+        validateCoordinates(lat, lon);
         double latDelta = radiusKm / 111.0;
         double lonDelta = radiusKm / (111.0 * Math.cos(Math.toRadians(lat)));
-
         BoundingBox searchRange = new BoundingBox(lat - latDelta, lon - lonDelta, lat + latDelta, lon + lonDelta);
         List<VehicleRecord> candidates = new ArrayList<>();
         quadTree.queryRange(searchRange, candidates);
