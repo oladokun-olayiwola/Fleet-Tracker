@@ -251,6 +251,10 @@ public class Tracker {
                     }
                     double radius = scanner.nextDouble();
                     scanner.nextLine();
+                    if (radius < 0) {
+                        System.out.println("Radius cannot be negative.");
+                        break;
+                    }
 
                     double[] refCoords = UNILAG_STOPS.get(refStop);
                     List<VehicleRecord> nearby = tracker.findVehiclesNear(refCoords[0], refCoords[1], radius);
